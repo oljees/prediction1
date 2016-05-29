@@ -1,0 +1,105 @@
+---
+title: "DSS Prediction Assignment Writeup"
+author: "Jorgen Engmann"
+date: "27 May 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(sqldf)
+library(dplyr)
+library(tidyr)
+library(caret)
+library(Hmisc)
+knitr::opts_chunk$set(echo = TRUE,cache = T,warning = F,message = F )
+```
+
+## Introduction 
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+## Aim
+To use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict how well they do specific exercises.
+
+## Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. 
+
+Data was downloaded and read into R using code below.
+
+```{r loadData}
+#Read data
+test<-read.csv("pml-testing.csv",na.strings = c("NA",""))
+train<-read.csv("pml-training.csv",na.strings = c("NA",""))
+```
+The data consists of 160 variables with 19622 observations in the training set and 20 in the testing set.  The following code checks missing data, near zero variance and correlation in the data, and also removes any uneccessary variables such as the identifiers and timestamps.
+
+```{r cleantraining}
+#remove variables with lots of missing data
+navars<-apply(train,2,function(x){sum(is.na(x))/length(x)})
+missingvars<-names(navars[which(navars>0.9)])
+train2<-select(train,-one_of(missingvars))
+
+#remove timestamps and id variables
+train3<-train2[,-(1:5)]
+
+#check nearzerovariance
+nsv<-nearZeroVar(train3,saveMetrics=T)
+nsv[nsv$nzv==T,]
+train4<-select(train3,-new_window)
+
+#check correlations
+M<-abs(cor(train4[-54]))
+diag(M)<-0
+correlatedVars<-which(M>0.9,arr.ind = T)
+correlatedVars
+```
+There are 100 variables with more than 90% of data missing.  These are removed, along with identifier variables and timestamps.  This leaves 54  valid variables to model the outcome "classe" from this dataset.  After checking for non zero variance and manually inspecting the rest of the data,variable __"new_window"__ was also removed as it has very little variability. 
+
+A correlation matrix of the remaining 53 variables shows some highly correlated variables.  Based on the number of correlated vars, a decision was taken not to exclude them as too much information would be lost.  Instead a Principal Components Analysis would be carried out in attempt to reduce the number of variables and yet capture at least 95% of variation. 
+
+## Modelling
+
+In order to allow estimation of an out of sample error, the training set was further split into a training and validation set on the __classe__ variable.   
+
+```{r modelling}
+#split
+set.seed(32323)
+inTrain <‐ createDataPartition(y=train4$classe,
+                               p=0.7, list=FALSE)
+training <‐ train4[inTrain,]
+validation <‐ train4[‐inTrain,]
+#dim(training); dim(validation)
+
+#calculate principal components and fit a random forest
+#This code takes a long time to run, so after one run the modelFit was saved and loaded to this markdown document for quicker compilation.  To run it again, simply un-comment the next line of code.
+
+#modelFit <‐ train(training$classe ~ .,method="rf",preProcess="pca",data=training)
+#save(modelFit,file="modelfit_rf_pca.RData")
+load("modelfit_rf_pca.RData")
+vpredictions<-predict(modelFit,validation)
+
+#confusion Matrix
+confMat<-confusionMatrix(vpredictions,validation$classe)
+confMat
+```
+Then model was fit to predict __classe__ from the best principal components derived from the training set using random forests.  The model picked 25 components that explained 95 percent of variance in the data.  This is a thorough approach which takes a long time to run, but includes all the information available.  The results suggest the model is 99.35% accurate.
+
+##Out of sample error estimation
+Since the validation set was not included in building the model, the estimated out of sample error is 1-accuracy which is 0.0065, that is 0.65%.
+
+##Predicting the Test set data
+This modelFit was then applied to the test set data
+
+```{r testSetPredictions}
+testPredctions<-predict(modelFit,newdata = test)
+testPredctions
+```
+These predictions have been submitted to the Coursera website and has "passed".

@@ -1,0 +1,16 @@
+base
+knitr
+proto
+gsubfn
+DBI
+RSQLite
+sqldf
+dplyr
+tidyr
+lattice
+ggplot2
+caret
+survival
+Formula
+Hmisc
+randomForest
